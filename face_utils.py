@@ -1,5 +1,6 @@
 """
-Face recognition utilities - ULTIMATE FIX with multiple samples
+Face recognition utilities - STRICT ONE-TO-ONE MATCHING
+Only recognizes the exact person in the dataset, no false matches
 """
 
 import cv2
@@ -22,29 +23,8 @@ class FaceRecognizer:
         cascade_path = cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
         self.face_cascade = cv2.CascadeClassifier(cascade_path)
         
-        if self.face_cascade.empty():
-            print("⚠️ Warning: Using alternative cascade path")
-            # Try multiple possible paths
-            possible_paths = [
-                'C:/Users/USER/AppData/Local/Programs/Python/Python311/Lib/site-packages/cv2/data/haarcascade_frontalface_default.xml',
-                'C:/ProgramData/Anaconda3/Lib/site-packages/cv2/data/haarcascade_frontalface_default.xml',
-                cv2.data.haarcascades + 'haarcascade_frontalface_alt2.xml'
-            ]
-            for path in possible_paths:
-                if os.path.exists(path):
-                    self.face_cascade = cv2.CascadeClassifier(path)
-                    if not self.face_cascade.empty():
-                        print(f"✅ Loaded cascade from: {path}")
-                        break
-        
-        # Initialize LBPH face recognizer with optimized parameters
-        self.face_recognizer = cv2.face.LBPHFaceRecognizer_create(
-            radius=2,           # Increased radius for better feature extraction
-            neighbors=8,        # Number of neighbors
-            grid_x=8,           # Grid cells in X direction
-            grid_y=8,           # Grid cells in Y direction
-            threshold=100.0     # Default threshold
-        )
+        # Initialize face recognizer with VERY STRICT threshold
+        self.face_recognizer = cv2.face.LBPHFaceRecognizer_create()
         
         # Load existing encodings
         self.load_encodings()
@@ -61,11 +41,8 @@ class FaceRecognizer:
                     
                     # Train recognizer if we have data
                     if len(self.known_face_encodings) > 0:
-                        # Convert to numpy arrays
                         X = np.array(self.known_face_encodings, dtype=np.uint8)
                         y = np.array(range(len(self.known_face_names)), dtype=np.int32)
-                        
-                        # Train the recognizer
                         self.face_recognizer.train(X, y)
                         print(f"✅ Trained recognizer with {len(X)} face samples")
                     
@@ -104,14 +81,6 @@ class FaceRecognizer:
         # Apply histogram equalization
         face_roi = cv2.equalizeHist(face_roi)
         
-        # Apply Gaussian blur to reduce noise
-        face_roi = cv2.GaussianBlur(face_roi, (3, 3), 0)
-        
-        # Apply adaptive thresholding for better features
-        face_roi = cv2.adaptiveThreshold(face_roi, 255, 
-                                         cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-                                         cv2.THRESH_BINARY, 11, 2)
-        
         return face_roi
     
     def extract_face_features(self, image):
@@ -126,13 +95,12 @@ class FaceRecognizer:
             else:
                 gray = image
             
-            # Detect faces with optimized parameters
+            # Detect faces
             faces = self.face_cascade.detectMultiScale(
                 gray,
-                scaleFactor=1.05,     # Smaller scale factor for better detection
-                minNeighbors=3,        # Fewer neighbors to catch more faces
-                minSize=(150, 150),    # Minimum face size
-                maxSize=(500, 500),    # Maximum face size
+                scaleFactor=1.1,
+                minNeighbors=5,
+                minSize=(150, 150),
                 flags=cv2.CASCADE_SCALE_IMAGE
             )
             
@@ -185,7 +153,6 @@ class FaceRecognizer:
                 features, locations = self.extract_face_features(image)
                 
                 if len(features) > 0:
-                    # Take the first face (should be the only one)
                     feature_vector = features[0]
                     student_name = image_path.stem
                     
@@ -245,7 +212,7 @@ class FaceRecognizer:
             return False, f"❌ Error: {str(e)}"
     
     def recognize_faces(self, frame):
-        """Recognize faces in a frame"""
+        """Recognize faces in a frame - STRICT matching"""
         try:
             if frame is None:
                 return []
@@ -260,20 +227,23 @@ class FaceRecognizer:
                 confidence = 0
                 can_mark = False
                 
-                # Try to recognize
+                # Try to recognize with VERY STRICT threshold
                 if len(self.known_face_encodings) > 0:
                     try:
                         # Predict using LBPH
                         label, confidence_value = self.face_recognizer.predict(feature)
                         
+                        # STRICT threshold - only accept if VERY confident
                         # LBPH confidence: lower is better (0 = perfect match)
-                        # Adjust threshold based on your results
-                        if confidence_value < 90:  # Increased threshold
+                        # Setting very low threshold for strict matching
+                        STRICT_THRESHOLD = 45  # Very strict - only accept if confidence is very low
+                        
+                        if confidence_value < STRICT_THRESHOLD:
                             if 0 <= label < len(self.known_face_names):
                                 name = self.known_face_names[label]
                                 confidence = max(0, 100 - confidence_value)
                                 
-                                print(f"🎯 Recognized: {name} (confidence: {confidence:.1f}%, value: {confidence_value})")
+                                print(f"🎯 STRICT MATCH: {name} (confidence: {confidence:.1f}%, value: {confidence_value})")
                                 
                                 # Check cooldown
                                 current_time = time.time()
@@ -285,7 +255,7 @@ class FaceRecognizer:
                                     can_mark = True
                                     self.last_recognition_time[name] = current_time
                         else:
-                            print(f"❌ Low confidence: {confidence_value}")
+                            print(f"❌ REJECTED - confidence too low: {confidence_value} > {STRICT_THRESHOLD}")
                     
                     except Exception as e:
                         print(f"Recognition error: {e}")

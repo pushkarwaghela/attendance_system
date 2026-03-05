@@ -18,9 +18,9 @@ TEMP_FOLDER = BASE_DIR / "temp"
 ENCODINGS_FILE = MODELS_FOLDER / "face_encodings.pkl"
 ATTENDANCE_FILE = ATTENDANCE_FOLDER / "attendance.csv"
 
-# Recognition settings
-RECOGNITION_THRESHOLD = 0.45  # Lower = stricter matching (optimized)
-RECOGNITION_COOLDOWN = 3       # Seconds between recognitions
+# Recognition settings - STRICT MODE
+RECOGNITION_THRESHOLD = 45  # VERY STRICT - only match if confidence is very low
+RECOGNITION_COOLDOWN = 10    # Seconds between recognitions
 
 # Camera settings
 CAMERA_INDEX = 0
@@ -31,7 +31,8 @@ CAMERA_HEIGHT = 480
 for folder in [DATASET_FOLDER, MODELS_FOLDER, ATTENDANCE_FOLDER, TEMP_FOLDER]:
     folder.mkdir(exist_ok=True, parents=True)
 
-print(f"✅ Configuration loaded")
+print(f"✅ Configuration loaded - STRICT MODE ENABLED")
 print(f"📁 Dataset folder: {DATASET_FOLDER}")
 print(f"📁 Models folder: {MODELS_FOLDER}")
 print(f"📁 Attendance folder: {ATTENDANCE_FOLDER}")
+print(f"🎯 Recognition threshold: {RECOGNITION_THRESHOLD} (very strict)")
