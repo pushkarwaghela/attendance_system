@@ -1,5 +1,5 @@
 """
-Configuration settings for the attendance system
+Configuration settings - OPTIMIZED for speed and accuracy
 """
 
 import os
@@ -12,27 +12,26 @@ BASE_DIR = Path(__file__).parent
 DATASET_FOLDER = BASE_DIR / "dataset"
 MODELS_FOLDER = BASE_DIR / "models"
 ATTENDANCE_FOLDER = BASE_DIR / "attendance"
-TEMP_FOLDER = BASE_DIR / "temp"
 
 # Files
 ENCODINGS_FILE = MODELS_FOLDER / "face_encodings.pkl"
 ATTENDANCE_FILE = ATTENDANCE_FOLDER / "attendance.csv"
 
-# Recognition settings - STRICT MODE
-RECOGNITION_THRESHOLD = 45  # VERY STRICT - only match if confidence is very low
-RECOGNITION_COOLDOWN = 10    # Seconds between recognitions
+# Recognition settings - BALANCED for speed/accuracy
+RECOGNITION_THRESHOLD = 50  # Balanced threshold
+RECOGNITION_COOLDOWN = 3     # Seconds between recognitions
+FRAME_SKIP = 2               # Process every 2nd frame for speed
 
-# Camera settings
+# Camera settings - OPTIMIZED
 CAMERA_INDEX = 0
 CAMERA_WIDTH = 640
 CAMERA_HEIGHT = 480
+CAMERA_FPS = 30
 
-# Create directories if they don't exist
-for folder in [DATASET_FOLDER, MODELS_FOLDER, ATTENDANCE_FOLDER, TEMP_FOLDER]:
+# Create directories
+for folder in [DATASET_FOLDER, MODELS_FOLDER, ATTENDANCE_FOLDER]:
     folder.mkdir(exist_ok=True, parents=True)
 
-print(f"✅ Configuration loaded - STRICT MODE ENABLED")
-print(f"📁 Dataset folder: {DATASET_FOLDER}")
-print(f"📁 Models folder: {MODELS_FOLDER}")
-print(f"📁 Attendance folder: {ATTENDANCE_FOLDER}")
-print(f"🎯 Recognition threshold: {RECOGNITION_THRESHOLD} (very strict)")
+print(f"✅ Configuration loaded - OPTIMIZED MODE")
+print(f"📁 Dataset: {DATASET_FOLDER}")
+print(f"🎯 Threshold: {RECOGNITION_THRESHOLD}")

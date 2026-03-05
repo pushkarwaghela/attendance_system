@@ -1,57 +1,60 @@
 """
-Test face recognition with a single image
+Test face recognition quality
 """
 
 import cv2
-import sys
-from pathlib import Path
-sys.path.append('.')
+from face_utils import face_recognizer
 
-from face_utils import FaceRecognizer
+print("🔍 Testing Face Recognition Quality")
+print("=" * 50)
 
-print("🔍 Testing Face Recognition...")
+# Load students
+students = face_recognizer.get_students()
+print(f"📚 Registered students: {students}")
 
-# Initialize recognizer
-recognizer = FaceRecognizer()
-
-if len(recognizer.get_student_list()) == 0:
-    print("❌ No students registered. Please add students first.")
-    exit()
-
-print(f"✅ Found {len(recognizer.get_student_list())} students: {recognizer.get_student_list()}")
-
-# Try to open camera
+# Open camera
 cap = cv2.VideoCapture(0)
-if not cap.isOpened():
-    print("❌ Cannot open camera")
-    exit()
-
-print("\n📸 Press SPACE to capture and recognize, ESC to exit\n")
+print("\n📸 Live recognition - Press ESC to exit")
+print("   Green box = recognized, Red box = unknown")
+print("   Confidence shown on screen\n")
 
 while True:
     ret, frame = cap.read()
     if not ret:
         break
     
-    # Show frame
-    cv2.imshow('Test Recognition - Press SPACE', frame)
+    # Recognize faces
+    faces = face_recognizer.recognize_faces(frame)
     
-    key = cv2.waitKey(1) & 0xFF
-    if key == 27:  # ESC
-        break
-    elif key == 32:  # SPACE
-        print("\n🔄 Analyzing frame...")
+    for face in faces:
+        x, y, w, h = face['bbox']
+        name = face['name']
+        conf = face['confidence']
         
-        # Recognize
-        faces = recognizer.recognize_faces(frame)
-        
-        if faces:
-            for face in faces:
-                print(f"  → Name: {face['name']}")
-                print(f"    Confidence: {face['confidence']:.1f}%")
-                print(f"    Can mark: {face['can_mark']}")
+        if name != "Unknown":
+            color = (0, 255, 0)
+            label = f"{name} ({conf:.1f}%)"
         else:
-            print("❌ No faces detected or recognized")
+            color = (0, 0, 255)
+            label = "Unknown"
+        
+        # Draw rectangle
+        cv2.rectangle(frame, (x, y), (x+w, y+h), color, 2)
+        
+        # Draw label with background
+        (tw, th), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)
+        cv2.rectangle(frame, (x, y-th-10), (x+tw, y), color, -1)
+        cv2.putText(frame, label, (x, y-5), 
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+    
+    # Show info
+    cv2.putText(frame, f"Faces: {len(faces)}", (10, 30), 
+               cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+    
+    cv2.imshow('Recognition Test', frame)
+    
+    if cv2.waitKey(1) & 0xFF == 27:  # ESC
+        break
 
 cap.release()
 cv2.destroyAllWindows()

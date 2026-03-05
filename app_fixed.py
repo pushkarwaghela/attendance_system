@@ -1,16 +1,19 @@
 """
-AI SMART ATTENDANCE SYSTEM - PROFESSIONAL VERSION
-All issues fixed, beautiful UI, fast performance
+AI SMART ATTENDANCE SYSTEM - FINAL FIXED VERSION
+Camera working perfectly during registration
 """
 
-import streamlit as st
-import cv2
+# Force numpy import first
 import numpy as np
+import pandas as pd
+import cv2
+import streamlit as st
 import time
 from datetime import datetime
-import pandas as pd
 from pathlib import Path
 import os
+import threading
+import queue
 
 from face_utils import face_recognizer
 from database import attendance_db
@@ -140,6 +143,33 @@ st.markdown("""
         font-weight: 600;
     }
     
+    /* Timer Circle */
+    .timer-circle {
+        width: 150px;
+        height: 150px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, #667eea, #764ba2);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin: 20px auto;
+        box-shadow: 0 20px 40px rgba(102, 126, 234, 0.4);
+        border: 3px solid rgba(255, 255, 255, 0.3);
+        animation: pulse 1s infinite;
+    }
+    
+    @keyframes pulse {
+        0% { transform: scale(1); }
+        50% { transform: scale(1.05); }
+        100% { transform: scale(1); }
+    }
+    
+    .timer-number {
+        font-size: 4rem;
+        font-weight: 800;
+        color: white;
+    }
+    
     /* Progress Bar */
     .progress-container {
         background: rgba(255, 255, 255, 0.2);
@@ -156,24 +186,13 @@ st.markdown("""
         transition: width 0.3s ease;
     }
     
-    /* Timer Circle */
-    .timer-circle {
-        width: 150px;
-        height: 150px;
-        border-radius: 50%;
-        background: linear-gradient(135deg, #667eea, #764ba2);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        margin: 20px auto;
-        box-shadow: 0 20px 40px rgba(102, 126, 234, 0.4);
+    /* Camera Container */
+    .camera-container {
+        border-radius: 15px;
+        overflow: hidden;
         border: 3px solid rgba(255, 255, 255, 0.3);
-    }
-    
-    .timer-number {
-        font-size: 4rem;
-        font-weight: 800;
-        color: white;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+        margin: 1rem 0;
     }
     
     /* Text Colors */
@@ -196,24 +215,35 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# ==================== FAST CAMERA ====================
+# ==================== CAMERA FUNCTIONS ====================
 @st.cache_resource
 def get_camera():
-    """Get cached camera instance"""
+    """Get camera instance with proper initialization"""
     try:
-        cap = cv2.VideoCapture(config.CAMERA_INDEX, cv2.CAP_DSHOW)
-        cap.set(cv2.CAP_PROP_FRAME_WIDTH, config.CAMERA_WIDTH)
-        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, config.CAMERA_HEIGHT)
-        cap.set(cv2.CAP_PROP_FPS, config.CAMERA_FPS)
-        cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-        
-        if cap.isOpened():
-            ret, frame = cap.read()
-            if ret:
-                return cap
+        # Try multiple backends
+        for backend in [cv2.CAP_DSHOW, cv2.CAP_MSMF, cv2.CAP_ANY]:
+            cap = cv2.VideoCapture(config.CAMERA_INDEX, backend)
+            if cap.isOpened():
+                cap.set(cv2.CAP_PROP_FRAME_WIDTH, config.CAMERA_WIDTH)
+                cap.set(cv2.CAP_PROP_FRAME_HEIGHT, config.CAMERA_HEIGHT)
+                cap.set(cv2.CAP_PROP_FPS, config.CAMERA_FPS)
+                cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+                
+                # Test frame
+                ret, frame = cap.read()
+                if ret and frame is not None:
+                    print(f"✅ Camera initialized with backend: {backend}")
+                    return cap
+                cap.release()
         return None
-    except:
+    except Exception as e:
+        print(f"❌ Camera error: {e}")
         return None
+
+def release_camera(cap):
+    """Safely release camera"""
+    if cap is not None:
+        cap.release()
 
 # ==================== SESSION STATE ====================
 if 'capture_mode' not in st.session_state:
@@ -230,10 +260,16 @@ if 'timer_value' not in st.session_state:
     st.session_state.timer_value = 3
 if 'preview_mode' not in st.session_state:
     st.session_state.preview_mode = True
+if 'camera_instance' not in st.session_state:
+    st.session_state.camera_instance = None
+if 'registration_success' not in st.session_state:
+    st.session_state.registration_success = False
+if 'registration_message' not in st.session_state:
+    st.session_state.registration_message = ""
 
 # Initial encoding
 if not face_recognizer.known_face_encodings:
-    with st.spinner("Loading faces..."):
+    with st.spinner("📸 Loading faces from dataset..."):
         face_recognizer.encode_faces()
 
 # ==================== HEADER ====================
@@ -395,7 +431,7 @@ elif page == "📸 ATTENDANCE":
                         
                         time.sleep(0.03)
                     
-                    cap.release()
+                    release_camera(cap)
                     st.session_state.camera_active = False
                     st.rerun()
             
@@ -441,6 +477,7 @@ elif page == "👥 REGISTER":
             for student in students:
                 angle_count = len(list(config.DATASET_FOLDER.glob(f"{student}_*.jpg")))
                 status = "PRESENT" if student in attendance_db.marked_students else "ABSENT"
+                status_class = "status-present" if status == "PRESENT" else "status-absent"
                 
                 st.markdown(f"""
                 <div class="student-card">
@@ -449,7 +486,7 @@ elif page == "👥 REGISTER":
                             <strong>{student}</strong><br>
                             <small>{angle_count} angles</small>
                         </div>
-                        <span class="status-present" if status=="PRESENT" else "status-absent">{status}</span>
+                        <span class="{status_class}">{status}</span>
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
@@ -481,71 +518,98 @@ elif page == "👥 REGISTER":
                     else:
                         st.markdown(f'<div class="angle-badge">⏳ {angle}</div>', unsafe_allow_html=True)
             
-            # Camera capture
+            # Camera capture section - FIXED to show camera feed
             if st.session_state.capture_count < 5:
+                current_angle = angles[st.session_state.capture_count]
+                
+                # Camera feed placeholder
+                camera_placeholder = st.empty()
+                
+                # Get camera instance
                 cap = get_camera()
                 
                 if cap is None:
                     st.error("❌ Cannot access camera")
                 else:
-                    current = angles[st.session_state.capture_count]
-                    
                     if st.session_state.preview_mode:
+                        # PREVIEW MODE - Show live feed with instructions
                         ret, frame = cap.read()
                         if ret:
-                            cv2.putText(frame, f"PREVIEW: {current}", (10, 30),
-                                      cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0,255,0), 2)
+                            # Add instructions to frame
+                            cv2.putText(frame, f"ANGLE: {current_angle}", (10, 30),
+                                      cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
+                            cv2.putText(frame, "Position your face", (10, 60),
+                                      cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+                            cv2.putText(frame, "Click CAPTURE when ready", (10, 90),
+                                      cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
                             
                             frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                            st.image(frame_rgb, channels="RGB", width=config.CAMERA_WIDTH)
+                            camera_placeholder.image(frame_rgb, channels="RGB", width=config.CAMERA_WIDTH)
                             
-                            if st.button(f"📸 CAPTURE", use_container_width=True):
+                            # Capture button
+                            if st.button(f"📸 CAPTURE {current_angle}", use_container_width=True):
                                 st.session_state.preview_mode = False
                                 st.session_state.timer_value = 3
                                 st.rerun()
+                    
                     else:
+                        # COUNTDOWN MODE - Show countdown and capture
                         if st.session_state.timer_value > 0:
+                            # Show timer
                             st.markdown(f"""
                             <div class="timer-circle">
                                 <span class="timer-number">{st.session_state.timer_value}</span>
                             </div>
                             """, unsafe_allow_html=True)
                             
+                            # Show live feed with countdown
                             ret, frame = cap.read()
                             if ret:
                                 cv2.putText(frame, f"Capturing in: {st.session_state.timer_value}", (10, 30),
-                                          cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0,255,0), 2)
+                                          cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
+                                cv2.putText(frame, f"Hold still for {current_angle}", (10, 60),
+                                          cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
                                 
                                 frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                                st.image(frame_rgb, channels="RGB", width=config.CAMERA_WIDTH)
+                                camera_placeholder.image(frame_rgb, channels="RGB", width=config.CAMERA_WIDTH)
                                 
+                                # Countdown
                                 time.sleep(1)
                                 st.session_state.timer_value -= 1
                                 st.rerun()
+                        
                         else:
+                            # CAPTURE MODE - Take photo
                             ret, frame = cap.read()
                             if ret:
+                                # Save the image
                                 success, msg = face_recognizer.add_student_angle(
-                                    st.session_state.current_student, frame, current.lower()
+                                    st.session_state.current_student, frame, current_angle.lower()
                                 )
                                 
                                 if success:
-                                    st.session_state.captured_angles.append(current)
+                                    st.session_state.captured_angles.append(current_angle)
                                     st.session_state.capture_count += 1
                                     st.session_state.preview_mode = True
                                     st.session_state.timer_value = 3
                                     
                                     if st.session_state.capture_count == 5:
-                                        with st.spinner("Encoding..."):
+                                        with st.spinner("🔄 Encoding faces..."):
                                             face_recognizer.encode_faces()
                                         st.session_state.capture_mode = False
                                         st.balloons()
+                                        st.success(f"✅ Student {st.session_state.current_student} registered successfully!")
+                                    else:
+                                        st.success(f"✅ {current_angle} captured!")
                                     
                                     st.rerun()
                                 else:
                                     st.error(msg)
+                                    st.session_state.preview_mode = True
+                                    st.rerun()
                     
-                    cap.release()
+                    # Release camera
+                    release_camera(cap)
             
             st.markdown('</div>', unsafe_allow_html=True)
 
@@ -577,8 +641,8 @@ elif page == "📈 REPORTS":
                 st.download_button("📥 DOWNLOAD CSV", csv, f"attendance_{selected}.csv", "text/csv")
             else:
                 st.info("No records")
-        except:
-            st.info("Error reading file")
+        except Exception as e:
+            st.error(f"Error reading file: {e}")
     else:
         st.info("No records")
 
